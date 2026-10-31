@@ -14,3 +14,11 @@ jobs:
           H2=$(curl -sS -o /tmp/k2 -D - -H "Range: bytes=50000000-50000099" -H "Origin: https://example.org" $B/teil.001)
           echo "::notice::Range Mitte teil.001: $(echo "$H2" | grep -i '^HTTP' | tr -d '\r') | $(echo "$H2" | grep -i 'content-range' | tr -d '\r') | $(echo "$H2" | grep -i 'access-control-allow-origin' | tr -d '\r') | Bytes $(wc -c < /tmp/k2)"
           echo "::notice::Verzeichnis: $(curl -sS $B/verzeichnis.json | tr -d '\n' | head -c 300)"
+  lesen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node werkzeug/lesetest.mjs
