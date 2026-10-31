@@ -1,0 +1,82 @@
+# Baut monatlich eine Vektorkarte (OpenMapTiles-Schema, wie OpenFreeMap) fuer
+# Baden-Wuerttemberg plus Randstreifen (Elsass, Schweiz, Nachbarlaender) aus den
+# OpenStreetMap-Rohdaten (Geofabrik) mit Planetiler und stellt sie als PMTiles
+# (in Teilen <= 95 MB) auf GitHub Pages bereit. Die App laedt daraus nur den
+# Ausschnitt, den der Nutzer braucht.
+name: Karte bauen
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 3 * *'   # monatlich am 3., 03:17 UTC
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+env:
+  # BW mit ca. 30 km Rand (W, S, O, N)
+  BOX: '7.10,47.25,10.85,50.05'
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Platz schaffen
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Werkzeuge
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          curl -fsSL -o planetiler.jar https://github.com/onthegomap/planetiler/releases/latest/download/planetiler.jar
+      - name: OSM-Daten laden und zuschneiden
+        run: |
+          mkdir -p roh
+          for r in europe/germany/baden-wuerttemberg europe/germany/rheinland-pfalz europe/germany/hessen europe/germany/bayern/schwaben europe/france/alsace europe/switzerland; do
+            n=$(basename $r)
+            curl -fsSL --retry 3 -o roh/$n.osm.pbf https://download.geofabrik.de/$r-latest.osm.pbf
+          done
+          ls -la roh
+          osmium merge roh/*.osm.pbf -o alles.osm.pbf --overwrite
+          osmium extract -b "$BOX" --strategy smart alles.osm.pbf -o region.osm.pbf --overwrite
+          rm -rf roh alles.osm.pbf
+          ls -la region.osm.pbf
+      - name: Karte bauen (Planetiler)
+        run: |
+          java -Xmx10g -jar planetiler.jar --osm-path=region.osm.pbf --download --bounds="$BOX" \
+            --output=karte.pmtiles --force --maxzoom=14 --render_maxzoom=14 --storage=mmap --nodemap-type=sparsearray
+          ls -la karte.pmtiles
+      - name: Aufteilen und Verzeichnis schreiben
+        run: |
+          mkdir -p site/bw
+          split -b 95000000 -d -a 3 karte.pmtiles site/bw/teil.
+          python3 - <<'PY'
+          import os, json, datetime
+          teile = sorted(f for f in os.listdir('site/bw') if f.startswith('teil.'))
+          groesse = os.path.getsize('karte.pmtiles')
+          w, s, o, n = map(float, os.environ['BOX'].split(','))
+          json.dump({'format': 'pmtiles-v3', 'schema': 'openmaptiles', 'stand': datetime.date.today().isoformat(),
+                     'groesse': groesse, 'teilGroesse': 95000000, 'teile': teile, 'box': [w, s, o, n], 'maxzoom': 14,
+                     'quelle': '© OpenStreetMap-Mitwirkende (ODbL), Schema © OpenMapTiles, erzeugt mit Planetiler'},
+                    open('site/bw/verzeichnis.json', 'w'), ensure_ascii=False, indent=1)
+          PY
+          cp README.md site/index.md 2>/dev/null || true
+          printf '<!doctype html><meta charset="utf-8"><title>Karte BW</title><p>Offline-Vektorkarte Baden-W&uuml;rttemberg (PMTiles, OpenMapTiles-Schema). Daten &copy; OpenStreetMap-Mitwirkende (ODbL). <a href="bw/verzeichnis.json">Verzeichnis</a></p>' > site/index.html
+          ls -la site/bw; du -sh site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  veroeffentlichen:
+    needs: bauen
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/deploy-pages@v4
