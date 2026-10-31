@@ -1,0 +1,16 @@
+# Prueft, ob GitHub Pages die Karte mit Teilabrufen (Range) und CORS ausliefert
+name: Karte pruefen
+on: workflow_dispatch
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          B=https://seblussi.github.io/karten-bw/bw
+          curl -sS $B/verzeichnis.json | head -c 600; echo
+          H=$(curl -sS -o /tmp/k -D - -H "Range: bytes=0-126" -H "Origin: https://seblussi.github.io" $B/teil.000)
+          echo "$H"
+          echo "::notice::Range-Antwort: $(echo "$H" | grep -i '^HTTP' | tr -d '\r') | $(echo "$H" | grep -i 'content-range' | tr -d '\r') | $(echo "$H" | grep -i 'access-control-allow-origin' | tr -d '\r') | Bytes $(wc -c < /tmp/k) | $(head -c 7 /tmp/k)"
+          H2=$(curl -sS -o /tmp/k2 -D - -H "Range: bytes=50000000-50000099" -H "Origin: https://example.org" $B/teil.001)
+          echo "::notice::Range Mitte teil.001: $(echo "$H2" | grep -i '^HTTP' | tr -d '\r') | $(echo "$H2" | grep -i 'content-range' | tr -d '\r') | $(echo "$H2" | grep -i 'access-control-allow-origin' | tr -d '\r') | Bytes $(wc -c < /tmp/k2)"
+          echo "::notice::Verzeichnis: $(curl -sS $B/verzeichnis.json | tr -d '\n' | head -c 300)"
