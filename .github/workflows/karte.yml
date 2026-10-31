@@ -51,7 +51,7 @@ jobs:
       - name: Karte bauen (Planetiler)
         run: |
           java -Xmx10g -jar planetiler.jar --osm-path=region.osm.pbf --download --bounds="$BOX" \
-            --output=karte.pmtiles --force --maxzoom=14 --render_maxzoom=14 --storage=mmap --nodemap-type=sparsearray
+            --output=karte.pmtiles --force --maxzoom=14 --storage=mmap --nodemap-type=sparsearray
           ls -la karte.pmtiles
       - name: Aufteilen und Verzeichnis schreiben
         run: |
